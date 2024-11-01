@@ -1,0 +1,317 @@
+<
+!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Scheduling Simulator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+        }
+        button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .gantt-chart {
+            display: flex;
+            margin-top: 20px;
+            border: 1px solid #000;
+            padding: 5px;
+            overflow-x: auto; /* Allow scrolling for larger charts */
+        }
+        .gantt-bar {
+            text-align: center;
+            color: white;
+            font-weight: bold;
+            margin: 2px;
+            height: 40px; /* Adjust height for better visibility */
+            line-height: 40px;
+        }
+        .output {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+        }
+        .process-input {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>CPU Scheduling Simulator</h1>
+
+    <!-- Input Form for Number of Processes -->
+    <label for="processCount">Number of Processes:</label>
+    <input type="number" id="processCount" min="1" value="1" onchange="generateProcessInputs()">
+
+    <div id="processInputs"></div>
+
+    <label for="algorithm">Select Scheduling Algorithm:</label>
+    <select id="algorithm">
+        <option value="FCFS">First-Come First-Serve (FCFS)</option>
+        <option value="SJF">Shortest Job First (SJF)</option>
+        <option value="Priority">Priority Scheduling</option>
+        <option value="RoundRobin">Round Robin</option>
+        <option value="SRTF">Shortest Remaining Time First (SRTF)</option>
+    </select>
+
+    <button type="button" onclick="simulateScheduling()">Simulate</button>
+
+    <!-- Output Section -->
+    <div class="output" id="output">
+        <h3>Scheduling Results:</h3>
+        <p id="results"></p>
+
+        <!-- Gantt Chart Display -->
+        <div id="ganttChart" class="gantt-chart"></div>
+    </div>
+</div>
+
+<!-- JavaScript Logic -->
+<script>
+    function generateProcessInputs() {
+        const count = document.getElementById("processCount").value;
+        const processInputs = document.getElementById("processInputs");
+        processInputs.innerHTML = ""; // Clear existing inputs
+
+        for (let i = 0; i < count; i++) {
+            const processDiv = document.createElement("div");
+            processDiv.className = "process-input";
+
+            processDiv.innerHTML = `
+                <label>Process ${i + 1} Arrival Time:</label>
+                <input type="number" class="arrivalTime" placeholder="e.g., 0" required>
+
+                <label>Process ${i + 1} Burst Time:</label>
+                <input type="number" class="burstTime" placeholder="e.g., 4" required>
+
+                <label>Process ${i + 1} Priority (Optional):</label>
+                <input type="number" class="priority" placeholder="e.g., 1">
+            `;
+            processInputs.appendChild(processDiv);
+        }
+    }
+
+    function simulateScheduling() {
+        // Clear previous results
+        document.getElementById("results").innerHTML = "";
+        document.getElementById("ganttChart").innerHTML = "";
+
+        // Get number of processes
+        const count = document.getElementById("processCount").value;
+        const arrivalTime = [];
+        const burstTime = [];
+        const priority = [];
+
+        for (let i = 0; i < count; i++) {
+            arrivalTime.push(Number(document.querySelectorAll(".arrivalTime")[i].value));
+            burstTime.push(Number(document.querySelectorAll(".burstTime")[i].value));
+            priority.push(Number(document.querySelectorAll(".priority")[i].value) || null);
+        }
+
+        let processes = arrivalTime.map((arrival, index) => ({
+            id: index + 1,
+            arrival,
+            burst: burstTime[index],
+            priority: priority[index],
+            waitingTime: 0,
+            turnaroundTime: 0,
+            responseTime: 0,
+            remainingBurst: burstTime[index]
+        }));
+
+        // Scheduling logic based on selected algorithm
+        let ganttData;
+        const algorithm = document.getElementById("algorithm").value;
+        switch (algorithm) {
+            case "FCFS":
+                ganttData = FCFS(processes);
+                break;
+            case "SJF":
+                ganttData = SJF(processes);
+                break;
+            case "Priority":
+                ganttData = PriorityScheduling(processes);
+                break;
+            case "RoundRobin":
+                ganttData = RoundRobin(processes, 2); // Assuming a quantum of 2
+                break;
+            case "SRTF":
+                ganttData = SRTF(processes);
+                break;
+        }
+
+        // Update results and Gantt chart
+        displayResults(processes);
+        generateGanttChart(ganttData);
+    }
+
+    function FCFS(processes) {
+        processes.sort((a, b) => a.arrival - b.arrival);
+        let time = 0;
+        let ganttData = [];
+        processes.forEach(process => {
+            if (time < process.arrival) {
+                time = process.arrival;
+            }
+            process.waitingTime = time - process.arrival;
+            ganttData.push({ id: process.id, duration: process.burst });
+            time += process.burst;
+            process.turnaroundTime = process.waitingTime + process.burst;
+            process.responseTime = process.waitingTime; // For FCFS, response time is same as waiting time
+        });
+        return ganttData;
+    }
+
+    function SJF(processes) {
+        let time = 0;
+        let ganttData = [];
+        while (processes.length > 0) {
+            let availableProcesses = processes.filter(p => p.arrival <= time);
+            if (availableProcesses.length === 0) {
+                time++;
+                continue; // Idle CPU time
+            }
+            let shortestProcess = availableProcesses.reduce((prev, curr) => (prev.burst < curr.burst ? prev : curr));
+            shortestProcess.waitingTime = time - shortestProcess.arrival;
+            ganttData.push({ id: shortestProcess.id, duration: shortestProcess.burst });
+            time += shortestProcess.burst;
+            shortestProcess.turnaroundTime = shortestProcess.waitingTime + shortestProcess.burst;
+            shortestProcess.responseTime = shortestProcess.waitingTime; // For SJF, response time is same as waiting time
+            processes = processes.filter(p => p.id !== shortestProcess.id);
+        }
+        return ganttData;
+    }
+
+    function PriorityScheduling(processes) {
+        let time = 0;
+        let ganttData = [];
+        while (processes.length > 0) {
+            let availableProcesses = processes.filter(p => p.arrival <= time);
+            if (availableProcesses.length === 0) {
+                time++;
+                continue; // Idle CPU time
+            }
+            let highestPriorityProcess = availableProcesses.reduce((prev, curr) => (prev.priority < curr.priority ? prev : curr));
+            highestPriorityProcess.waitingTime = time - highestPriorityProcess.arrival;
+            ganttData.push({ id: highestPriorityProcess.id, duration: highestPriorityProcess.burst });
+            time += highestPriorityProcess.burst;
+            highestPriorityProcess.turnaroundTime = highestPriorityProcess.waitingTime + highestPriorityProcess.burst;
+            highestPriorityProcess.responseTime = highestPriorityProcess.waitingTime; // For Priority, response time is same as waiting time
+            processes = processes.filter(p => p.id !== highestPriorityProcess.id);
+        }
+        return ganttData;
+    }
+
+    function RoundRobin(processes, quantum) {
+        let time = 0;
+        let ganttData = [];
+        let queue = [...processes];
+        while (queue.length > 0) {
+            let process = queue.shift();
+            if (process.arrival <= time) {
+                let executedTime = Math.min(process.remainingBurst, quantum);
+                ganttData.push({ id: process.id, duration: executedTime });
+                process.remainingBurst -= executedTime;
+                time += executedTime;
+
+                if (process.remainingBurst > 0) {
+                    queue.push(process); // Re-queue the process if not finished
+                } else {
+                    process.turnaroundTime = time - process.arrival;
+                    process.waitingTime = process.turnaroundTime - process.burst;
+                    process.responseTime = process.waitingTime; // For Round Robin, response time is same as waiting time
+                }
+            } else {
+                time++; // Idle CPU time
+                queue.push(process); // Re-queue process if it couldn't be executed
+            }
+        }
+        return ganttData;
+    }
+
+    function SRTF(processes) {
+        let time = 0;
+        let ganttData = [];
+        while (processes.length > 0) {
+            let availableProcesses = processes.filter(p => p.arrival <= time);
+            if (availableProcesses.length === 0) {
+                time++;
+                continue; // Idle CPU time
+            }
+            let shortestProcess = availableProcesses.reduce((prev, curr) => (prev.remainingBurst < curr.remainingBurst ? prev : curr));
+            ganttData.push({ id: shortestProcess.id, duration: 1 });
+            shortestProcess.remainingBurst--;
+            time++;
+            if (shortestProcess.remainingBurst === 0) {
+                shortestProcess.turnaroundTime = time - shortestProcess.arrival;
+                shortestProcess.waitingTime = shortestProcess.turnaroundTime - shortestProcess.burst;
+                shortestProcess.responseTime = shortestProcess.waitingTime; // Response time calculation
+                processes = processes.filter(p => p.id !== shortestProcess.id);
+            }
+        }
+        return ganttData;
+    }
+
+    function generateGanttChart(ganttData) {
+        const ganttChart = document.getElementById("ganttChart");
+        let currentTime = 0;
+        ganttData.forEach(data => {
+            const ganttBar = document.createElement('div');
+            ganttBar.className = 'gantt-bar';
+            ganttBar.style.backgroundColor = getRandomColor();
+            ganttBar.style.width = data.duration * 40 + "px"; // Width proportional to duration
+            ganttBar.textContent = `P${data.id}`;
+            ganttChart.appendChild(ganttBar);
+            currentTime += data.duration;
+        });
+    }
+
+    function displayResults(processes) {
+        let resultText = `Results: <br>`;
+        processes.forEach(process => {
+            resultText += `Process P${process.id}: Waiting Time = ${process.waitingTime}, Turnaround Time = ${process.turnaroundTime}, Response Time = ${process.responseTime} <br>`;
+        });
+        document.getElementById("results").innerHTML = resultText;
+    }
+
+    function getRandomColor() {
+        const letters = '0123456789ABCDEF';
+        let color = '#';
+        for (let i = 0; i < 6; i++) {
+            color += letters[Math.floor(Math.random() * 16)];
+        }
+        return color;
+    }
+</script>
+
+</body>
+</html>
